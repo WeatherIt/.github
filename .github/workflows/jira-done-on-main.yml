@@ -1,0 +1,68 @@
+# Reusable: move the ENG tickets a merged PR delivers to Done — but ONLY when it merged to main.
+#
+# In WeatherIt repos, merging to main IS the production deploy. A merge to sandbox never closes
+# anything, so "Done" means "in production". (ENG-380; on 2026-10-09 ENG-376 was closed on a
+# sandbox merge that production did not have.)
+#
+# Which keys count: see scripts/jira/extract-eng-keys.sh — PR title prefix, branch prefix,
+# commit subjects starting "ENG-123:", and merge commits from ENG- branches. Passing mentions
+# are ignored. Fail-soft: never fails the job; problems are warnings + job summary.
+#
+# Callers pass secrets with `secrets: inherit` (JIRA_EMAIL, JIRA_API_TOKEN). Template:
+# workflow-templates/jira-done-on-main.yml
+name: Jira — Done on main (reusable)
+
+on:
+  workflow_call:
+    inputs:
+      dry_run:
+        description: Report what would move without writing to Jira
+        type: boolean
+        default: false
+    secrets:
+      JIRA_EMAIL:
+        required: false
+      JIRA_API_TOKEN:
+        required: false
+
+permissions:
+  contents: read
+  pull-requests: read
+
+jobs:
+  done:
+    if: github.event.pull_request.merged == true && github.event.pull_request.base.ref == 'main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Fetch shared scripts
+        uses: actions/checkout@v4
+        with:
+          repository: WeatherIt/.github
+          ref: main
+          path: .weatherit-tools
+          sparse-checkout: scripts/jira
+
+      - name: Find delivered ENG keys
+        id: keys
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PR_TITLE: ${{ github.event.pull_request.title }}
+          HEAD_REF: ${{ github.event.pull_request.head.ref }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+        run: |
+          gh api "repos/${{ github.repository }}/pulls/$PR_NUMBER/commits" --paginate \
+            --jq '.[].commit.message | split("\n")[0]' > subjects.txt || : > subjects.txt
+          bash .weatherit-tools/scripts/jira/extract-eng-keys.sh "$PR_TITLE" "$HEAD_REF" < subjects.txt > keys.txt
+          echo "Delivered keys: $(tr '\n' ' ' < keys.txt)"
+
+      - name: Move them to Done
+        env:
+          JIRA_EMAIL: ${{ secrets.JIRA_EMAIL }}
+          JIRA_API_TOKEN: ${{ secrets.JIRA_API_TOKEN }}
+          PR_URL: ${{ github.event.pull_request.html_url }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          REPO: ${{ github.repository }}
+          MERGE_SHA: ${{ github.event.pull_request.merge_commit_sha }}
+          DRY_RUN: ${{ inputs.dry_run && '1' || '0' }}
+        run: bash .weatherit-tools/scripts/jira/transition-done.sh < keys.txt

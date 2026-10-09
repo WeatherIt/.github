@@ -1,0 +1,17 @@
+name: Test Jira scripts
+on:
+  pull_request:
+    paths: ['scripts/jira/**', '.github/workflows/jira-done-on-main.yml', '.github/workflows/test-jira-scripts.yml']
+  push:
+    branches: [main]
+    paths: ['scripts/jira/**']
+permissions:
+  contents: read
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: shellcheck scripts/jira/extract-eng-keys.sh scripts/jira/transition-done.sh
+      - run: bash scripts/jira/extract-eng-keys.test.sh
+      - run: bash scripts/jira/transition-done.test.sh
