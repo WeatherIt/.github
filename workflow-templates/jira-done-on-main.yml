@@ -1,0 +1,19 @@
+# Copy into <repo>/.github/workflows/jira-done-on-main.yml (ENG-380).
+# Moves delivered ENG tickets to Done when a PR merges to main (= production deploy).
+# Needs JIRA_EMAIL + JIRA_API_TOKEN as repo or org secrets; without them it warns and does nothing.
+name: Jira — Done on main
+
+on:
+  pull_request:
+    types: [closed]
+    branches: [main]
+
+permissions:
+  contents: read
+  pull-requests: read
+
+jobs:
+  jira:
+    if: github.event.pull_request.merged == true
+    uses: WeatherIt/.github/.github/workflows/jira-done-on-main.yml@main
+    secrets: inherit
