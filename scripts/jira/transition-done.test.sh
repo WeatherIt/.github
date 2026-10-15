@@ -7,16 +7,18 @@ tmp="$(mktemp -d)"; trap 'rm -rf "$tmp"' EXIT
 fail=0
 
 # Fake Jira: ENG-1 In Review (Done transition 61), ENG-2 already Done, ENG-3 has no Done transition,
-# ENG-4 does not exist. Every POST is appended to $tmp/posts.
+# ENG-4 does not exist, ENG-5 is an Epic In Progress (Done transition 61). Every POST is appended to $tmp/posts.
 cat > "$tmp/curl" <<'EOF'
 #!/usr/bin/env bash
 url=""; method=GET; for a in "$@"; do case "$a" in http*) url="$a";; POST) method=POST;; esac; done
 if [ "$method" = POST ]; then echo "$url" >> "$FAKE_DIR/posts"; echo '{}'; exit 0; fi
 case "$url" in
-  */ENG-1\?fields=status) echo '{"fields":{"status":{"name":"In Review","statusCategory":{"key":"indeterminate"}}}}';;
-  */ENG-2\?fields=status) echo '{"fields":{"status":{"name":"Done","statusCategory":{"key":"done"}}}}';;
-  */ENG-3\?fields=status) echo '{"fields":{"status":{"name":"Triage","statusCategory":{"key":"new"}}}}';;
+  */ENG-1\?fields=*) echo '{"fields":{"status":{"name":"In Review","statusCategory":{"key":"indeterminate"}}}}';;
+  */ENG-2\?fields=*) echo '{"fields":{"status":{"name":"Done","statusCategory":{"key":"done"}}}}';;
+  */ENG-3\?fields=*) echo '{"fields":{"status":{"name":"Triage","statusCategory":{"key":"new"}}}}';;
+  */ENG-5\?fields=*)      echo '{"fields":{"issuetype":{"name":"Epic","hierarchyLevel":1},"status":{"name":"In Progress","statusCategory":{"key":"indeterminate"}}}}';;
   */ENG-1/transitions)    echo '{"transitions":[{"id":"31","to":{"name":"Ready"}},{"id":"61","to":{"name":"Done"}}]}';;
+  */ENG-5/transitions)    echo '{"transitions":[{"id":"61","to":{"name":"Done"}}]}';;
   */ENG-3/transitions)    echo '{"transitions":[{"id":"31","to":{"name":"Ready"}}]}';;
   *) echo '{"errorMessages":["Issue does not exist"]}'; exit 22;;
 esac
@@ -40,6 +42,10 @@ assert "ENG-2 already Done: untouched"         '! grep -q "ENG-2/" "$tmp/posts" 
 assert "ENG-3 no Done transition: skipped"     '! grep -q "ENG-3/" "$tmp/posts" && grep -q "ENG-3: no Done transition" "$tmp/summary"'
 assert "ENG-4 missing: warned, skipped"        '! grep -q "ENG-4/" "$tmp/posts" && grep -q "ENG-4: could not read" "$tmp/summary"'
 assert "exactly two writes (ENG-1 only)"       '[ "$(wc -l < "$tmp/posts" | tr -d " ")" = 2 ]'
+
+# ENG-543: an epic closes when its children do, never because a PR's commit named it.
+rc="$(run 0 ENG-5)"
+assert "epic: left open, says why"             '[ ! -s "$tmp/posts" ] && grep -q "ENG-5: epic" "$tmp/summary"'
 
 rc="$(run 1 ENG-1)"
 assert "dry run writes nothing"                '[ ! -s "$tmp/posts" ] && grep -q "would move In Review" "$tmp/summary"'

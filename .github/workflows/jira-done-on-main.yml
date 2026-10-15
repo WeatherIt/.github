@@ -5,8 +5,10 @@
 # sandbox merge that production did not have.)
 #
 # Which keys count: see scripts/jira/extract-eng-keys.sh — PR title prefix, branch prefix,
-# commit subjects starting "ENG-123:", and merge commits from ENG- branches. Passing mentions
-# are ignored. Fail-soft: never fails the job; problems are warnings + job summary.
+# commit subjects starting "ENG-123:", Conventional Commits scopes ("feat(ENG-123): ..."), and
+# merge commits from ENG- branches. Passing mentions are ignored. A PR body line
+# "Jira-Keep-Open: ENG-123, ENG-456" leaves those tickets open (staged delivery), and epics are
+# never closed here. Fail-soft: never fails the job; problems are warnings + job summary.
 #
 # Callers pass secrets with `secrets: inherit` (JIRA_EMAIL, JIRA_API_TOKEN). Template:
 # workflow-templates/jira-done-on-main.yml
@@ -50,10 +52,11 @@ jobs:
           PR_TITLE: ${{ github.event.pull_request.title }}
           HEAD_REF: ${{ github.event.pull_request.head.ref }}
           PR_NUMBER: ${{ github.event.pull_request.number }}
+          PR_BODY: ${{ github.event.pull_request.body }}
         run: |
           gh api "repos/${{ github.repository }}/pulls/$PR_NUMBER/commits" --paginate \
             --jq '.[].commit.message | split("\n")[0]' > subjects.txt || : > subjects.txt
-          bash .weatherit-tools/scripts/jira/extract-eng-keys.sh "$PR_TITLE" "$HEAD_REF" < subjects.txt > keys.txt
+          bash .weatherit-tools/scripts/jira/extract-eng-keys.sh "$PR_TITLE" "$HEAD_REF" "$PR_BODY" < subjects.txt > keys.txt
           echo "Delivered keys: $(tr '\n' ' ' < keys.txt)"
 
       - name: Move them to Done
