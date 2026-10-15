@@ -32,13 +32,18 @@ found=0
 while IFS= read -r key; do
   [ -z "$key" ] && continue
   found=1
-  if ! issue="$(jira "$JIRA_BASE_URL/rest/api/3/issue/$key?fields=status" 2>&1)"; then
+  if ! issue="$(jira "$JIRA_BASE_URL/rest/api/3/issue/$key?fields=status,issuetype" 2>&1)"; then
     echo "::warning::$key: could not read issue ($issue)"; echo "- $key: could not read (skipped)" >> "$SUMMARY"; continue
   fi
   status="$(jq -r '.fields.status.name' <<<"$issue")"
   category="$(jq -r '.fields.status.statusCategory.key' <<<"$issue")"
   if [ "$category" = "done" ]; then
     echo "- $key: already $status (no change)" >> "$SUMMARY"; continue
+  fi
+  # An epic is done when its children are, not when one PR names it (ENG-543: ENG-525 shipped
+  # five children in a release while ENG-531 was still open).
+  if [ "$(jq -r '.fields.issuetype.hierarchyLevel // 0' <<<"$issue")" -ge 1 ]; then
+    echo "- $key: epic, left $status (close it when its children are done)" >> "$SUMMARY"; continue
   fi
   transitions="$(jira "$JIRA_BASE_URL/rest/api/3/issue/$key/transitions" 2>&1)" || {
     echo "::warning::$key: could not list transitions"; echo "- $key: could not list transitions (skipped)" >> "$SUMMARY"; continue; }
